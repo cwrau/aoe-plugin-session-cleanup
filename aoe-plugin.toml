@@ -1,0 +1,78 @@
+# Session Cleanup -- an Agent of Empires plugin.
+#
+# Manifest schema: aoe-plugin-api/src/manifest.rs in agent-of-empires. The host
+# parses this strictly (deny_unknown_fields), so every key must match a field in
+# that schema. Field-by-field reference:
+# https://agent-of-empires.com/docs/api/plugin-api/
+
+id = "io.cwrau.session-cleanup"
+name = "Session Cleanup"
+version = "0.1.0"
+# 18 is the first schema version with per-project settings (`per_project`);
+# `session.lifecycle.changed` needs 15 and `string_list` needs 14.
+api_version = 18
+aoe_version = ">=1.11.0, <2.0.0"
+description = "Cleans up build artifacts and other leftovers in a session's worktree after the session is trashed or deleted, according to per-project path lists."
+
+# runtime.worker  run the worker at all
+# session.read    sessions.list + the session.lifecycle.changed notifications
+# fs.read/write   inspect and delete paths inside the (trashed) worktree, which
+#                 lives outside the plugin directory
+capabilities = ["runtime.worker", "session.read", "fs.read", "fs.write"]
+
+[[commands]]
+id = "status"
+title = "Session Cleanup: status"
+description = "Show the Session Cleanup status summary."
+
+[[settings]]
+key = "enabled"
+label = "Enable Session Cleanup"
+description = "Master toggle. When off, nothing is cleaned."
+type = "boolean"
+default = true
+
+[[settings]]
+key = "sweep_on_start"
+label = "Sweep trashed sessions on start"
+description = "When the worker starts, also clean sessions that are already in the trash, catching events missed while the daemon was down. Cleaning must be safe to repeat, which deleting paths is."
+type = "boolean"
+default = true
+advanced = true
+
+[[settings]]
+key = "relocation_timeout_secs"
+label = "Wait for worktree move (seconds)"
+description = "How long to wait after a session is trashed for aoe to move its worktree into the trash holding directory before giving up. Worktrees aoe does not move (a default branch's checkout, unmanaged worktrees) are never cleaned on trash."
+type = "integer"
+default = 120
+min = 5
+max = 3600
+advanced = true
+
+# Per-project: set in the project's settings, falling back to the global value.
+# A project is cleaned only when its list contains something. Only aoe-managed
+# single-repo worktree sessions are touched.
+[[settings]]
+key = "paths"
+label = "Paths to delete"
+description = "Paths relative to the worktree root, e.g. `target` or `crates/*/target`. Single-level globs only (`*`, `?`, `[a-z]`); no `..`, no absolute paths, `.git` is never touched. Empty means this project is not cleaned."
+type = "string_list"
+per_project = true
+
+[[settings]]
+key = "on"
+label = "Clean when"
+description = "Lifecycle event that triggers the cleanup."
+type = "select"
+options = ["trash", "delete", "both"]
+default = "both"
+per_project = true
+
+[runtime]
+kind = "command"
+command = [".aoe-build/session-cleanup-worker"]
+
+[[runtime.build]]
+command = ["go", "build", "-o", ".aoe-build/session-cleanup-worker", "."]
+platforms = ["linux", "macos"]
