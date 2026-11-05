@@ -7,7 +7,7 @@
 
 id = "io.cwrau.session-cleanup"
 name = "Session Cleanup"
-version = "0.1.0"
+version = "0.1.1"
 # 18 is the first schema version with per-project settings (`per_project`);
 # `session.lifecycle.changed` needs 15 and `string_list` needs 14.
 api_version = 18
