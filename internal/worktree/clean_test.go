@@ -1,33 +1,12 @@
-package main
+package worktree
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/cwrau/aoe-plugin-session-cleanup/internal/testutil"
 )
-
-// newWorktree makes a fake linked worktree: a dir with a `.git` file.
-func newWorktree(t *testing.T) string {
-	t.Helper()
-	dir := filepath.Join(t.TempDir(), "wt")
-	writeFile(t, filepath.Join(dir, ".git"), "gitdir: /elsewhere\n")
-	return dir
-}
-
-func writeFile(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func exists(path string) bool {
-	_, err := os.Lstat(path)
-	return err == nil
-}
 
 func TestValidatePattern(t *testing.T) {
 	bad := []string{"", "  ", "/etc", ".", "..", "../x", "a/../../x", ".git", ".git/config", "sub/.git", "./"}
@@ -45,11 +24,11 @@ func TestValidatePattern(t *testing.T) {
 }
 
 func TestRemovePatternDeletesMatches(t *testing.T) {
-	dir := newWorktree(t)
-	writeFile(t, filepath.Join(dir, "target/debug/big"), "x")
-	writeFile(t, filepath.Join(dir, "crates/a/target/x"), "x")
-	writeFile(t, filepath.Join(dir, "crates/b/target/x"), "x")
-	writeFile(t, filepath.Join(dir, "crates/a/src/lib.rs"), "keep")
+	dir := testutil.NewWorktree(t)
+	testutil.WriteFile(t, filepath.Join(dir, "target/debug/big"), "x")
+	testutil.WriteFile(t, filepath.Join(dir, "crates/a/target/x"), "x")
+	testutil.WriteFile(t, filepath.Join(dir, "crates/b/target/x"), "x")
+	testutil.WriteFile(t, filepath.Join(dir, "crates/a/src/lib.rs"), "keep")
 
 	for _, p := range []string{"target", "crates/*/target", "missing"} {
 		if _, err := removePattern(dir, p); err != nil {
@@ -57,36 +36,36 @@ func TestRemovePatternDeletesMatches(t *testing.T) {
 		}
 	}
 	for _, gone := range []string{"target", "crates/a/target", "crates/b/target"} {
-		if exists(filepath.Join(dir, gone)) {
+		if testutil.Exists(filepath.Join(dir, gone)) {
 			t.Errorf("%s still exists", gone)
 		}
 	}
-	if !exists(filepath.Join(dir, "crates/a/src/lib.rs")) || !exists(filepath.Join(dir, ".git")) {
+	if !testutil.Exists(filepath.Join(dir, "crates/a/src/lib.rs")) || !testutil.Exists(filepath.Join(dir, ".git")) {
 		t.Error("removed something it should have kept")
 	}
 }
 
 func TestRemovePatternNeverTouchesGit(t *testing.T) {
-	dir := newWorktree(t)
-	writeFile(t, filepath.Join(dir, "keep"), "x")
+	dir := testutil.NewWorktree(t)
+	testutil.WriteFile(t, filepath.Join(dir, "keep"), "x")
 
 	// A wildcard that matches `.git` must skip it but still delete the rest.
 	removed, err := removePattern(dir, "*")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if removed != 1 || exists(filepath.Join(dir, "keep")) {
-		t.Errorf("removed %d, keep exists=%v", removed, exists(filepath.Join(dir, "keep")))
+	if removed != 1 || testutil.Exists(filepath.Join(dir, "keep")) {
+		t.Errorf("removed %d, keep exists=%v", removed, testutil.Exists(filepath.Join(dir, "keep")))
 	}
-	if !exists(filepath.Join(dir, ".git")) {
+	if !testutil.Exists(filepath.Join(dir, ".git")) {
 		t.Error(".git was deleted")
 	}
 }
 
 func TestRemovePatternDoesNotFollowSymlinkOutOfWorktree(t *testing.T) {
-	dir := newWorktree(t)
+	dir := testutil.NewWorktree(t)
 	outside := t.TempDir()
-	writeFile(t, filepath.Join(outside, "precious"), "x")
+	testutil.WriteFile(t, filepath.Join(outside, "precious"), "x")
 	if err := os.Symlink(outside, filepath.Join(dir, "link")); err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +75,7 @@ func TestRemovePatternDoesNotFollowSymlinkOutOfWorktree(t *testing.T) {
 	if _, err := removePattern(dir, "link/precious"); err != nil {
 		t.Fatal(err)
 	}
-	if !exists(filepath.Join(outside, "precious")) {
+	if !testutil.Exists(filepath.Join(outside, "precious")) {
 		t.Fatal("deleted a file outside the worktree through a symlink")
 	}
 
@@ -104,29 +83,29 @@ func TestRemovePatternDoesNotFollowSymlinkOutOfWorktree(t *testing.T) {
 	if _, err := removePattern(dir, "link"); err != nil {
 		t.Fatal(err)
 	}
-	if exists(filepath.Join(dir, "link")) || !exists(filepath.Join(outside, "precious")) {
+	if testutil.Exists(filepath.Join(dir, "link")) || !testutil.Exists(filepath.Join(outside, "precious")) {
 		t.Error("symlink removal touched its target")
 	}
 }
 
-func TestCleanWorktreeRefusesNonWorktree(t *testing.T) {
+func TestCleanRefusesNonWorktree(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "target/x"), "x")
-	if err := cleanWorktree(dir, []string{"target"}); err == nil {
+	testutil.WriteFile(t, filepath.Join(dir, "target/x"), "x")
+	if err := Clean(dir, []string{"target"}); err == nil {
 		t.Fatal("want error for a directory without .git")
 	}
-	if !exists(filepath.Join(dir, "target/x")) {
+	if !testutil.Exists(filepath.Join(dir, "target/x")) {
 		t.Error("deleted inside a non-worktree")
 	}
 }
 
-func TestCleanWorktreeContinuesAfterBadPath(t *testing.T) {
-	dir := newWorktree(t)
-	writeFile(t, filepath.Join(dir, "target/x"), "x")
-	if err := cleanWorktree(dir, []string{"../escape", "target"}); err == nil {
+func TestCleanContinuesAfterBadPath(t *testing.T) {
+	dir := testutil.NewWorktree(t)
+	testutil.WriteFile(t, filepath.Join(dir, "target/x"), "x")
+	if err := Clean(dir, []string{"../escape", "target"}); err == nil {
 		t.Error("want error for the rejected path")
 	}
-	if exists(filepath.Join(dir, "target")) {
+	if testutil.Exists(filepath.Join(dir, "target")) {
 		t.Error("a bad path stopped later paths from running")
 	}
 }

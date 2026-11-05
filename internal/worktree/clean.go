@@ -1,6 +1,6 @@
-// Cleaning one worktree directory: delete the configured paths, every deletion
-// confined to the worktree.
-package main
+// Package worktree cleans one git worktree directory, every deletion confined
+// to it, and locates a session's worktree from git's own bookkeeping.
+package worktree
 
 import (
 	"errors"
@@ -9,11 +9,13 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/cwrau/aoe-plugin-session-cleanup/internal/logging"
 )
 
-// isWorktreeDir reports whether dir looks like a git worktree: a linked
-// worktree has a `.git` file, a main checkout a `.git` directory.
-func isWorktreeDir(dir string) bool {
+// IsDir reports whether dir looks like a git worktree: a linked worktree has a
+// `.git` file, a main checkout a `.git` directory.
+func IsDir(dir string) bool {
 	_, err := os.Lstat(filepath.Join(dir, ".git"))
 	return err == nil
 }
@@ -94,11 +96,10 @@ func within(root, path string) bool {
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-// cleanWorktree deletes every pattern's matches in the worktree at dir. A bad
-// pattern does not stop the rest; all failures are joined into the returned
-// error.
-func cleanWorktree(dir string, patterns []string) error {
-	if !isWorktreeDir(dir) {
+// Clean deletes every pattern's matches in the worktree at dir. A bad pattern
+// does not stop the rest; all failures are joined into the returned error.
+func Clean(dir string, patterns []string) error {
+	if !IsDir(dir) {
 		return fmt.Errorf("%s is not a git worktree; refusing to clean it", dir)
 	}
 	var errs []error
@@ -107,7 +108,7 @@ func cleanWorktree(dir string, patterns []string) error {
 		if err != nil {
 			errs = append(errs, fmt.Errorf("path %q: %w", pattern, err))
 		}
-		logf("%q removed %d match(es) in %s", pattern, removed, dir)
+		logging.Logf("%q removed %d match(es) in %s", pattern, removed, dir)
 	}
 	return errors.Join(errs...)
 }

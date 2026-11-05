@@ -68,17 +68,17 @@ aoe plugin install ./aoe-plugin-session-cleanup
 ## Layout
 
 ```
-aoe-plugin.toml         manifest (settings, capabilities, runtime)
-worker.go               JSON-RPC worker loop
-rpc.go                  message shapes + response builders
-hostrpc.go              outbound host calls (config.get, sessions.list) + inbound demux
-model.go                session shapes, trash holding-path convention
-gitworktree.go          find a worktree by branch from git admin files
-settings.go             the per-project paths/on setting, parsed and matched
-cleanup.go              path deletion, confined to the worktree
-cleaner.go              lifecycle tracking and trigger logic
-*_test.go               unit tests, plus a contract test driving the real binary
-magefiles/              zero-install Mage build
+aoe-plugin.toml                    manifest (settings, capabilities, runtime)
+cmd/session-cleanup-worker/        worker entrypoint: stdio loop; its test drives the real binary
+internal/
+  cleaner/                         lifecycle tracking and trigger logic
+  logging/                         stderr diagnostics (stdout is JSON-RPC only)
+  rpc/                             JSON-RPC shapes, host calls (config.get, sessions.list), inbound demux
+  rule/                            the per-project paths/on setting, parsed and matched
+  session/                         session shapes, trash holding-path convention
+  testutil/                        shared test fixtures (fake worktrees, git admin entries)
+  worktree/                        path deletion confined to the worktree; find a worktree by branch
+magefiles/                         zero-install Mage build
 ```
 
 ## Develop

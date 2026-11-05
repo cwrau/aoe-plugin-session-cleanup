@@ -14,7 +14,10 @@ var Default = Check
 
 // workerBinary matches aoe-plugin.toml's own [[runtime.build]] command
 // exactly, so `mage build` and the plugin's real build step never drift.
-const workerBinary = ".aoe-build/session-cleanup-worker"
+const (
+	workerBinary  = ".aoe-build/session-cleanup-worker"
+	workerPackage = "./cmd/session-cleanup-worker"
+)
 
 // golangciLintPkg is the `tool` dependency pinned in magefiles/go.mod (via
 // `go get -tool`) — go.sum-verified and reproducible. The repo-root
@@ -25,7 +28,7 @@ const golangciLintPkg = "github.com/golangci/golangci-lint/v2/cmd/golangci-lint"
 
 // Build compiles the plugin worker binary.
 func Build() error {
-	return sh.RunV("go", "build", "-o", workerBinary, ".")
+	return sh.RunV("go", "build", "-o", workerBinary, workerPackage)
 }
 
 // Test runs the full test suite.

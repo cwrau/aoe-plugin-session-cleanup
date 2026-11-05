@@ -1,10 +1,11 @@
+package worktree
+
 // Locating a session's worktree from git's own bookkeeping, for when the path
 // the plugin last saw is stale. Every linked worktree has an admin directory
 // under `<repo>/.git/worktrees/<name>` (`<repo>/worktrees/<name>` in a bare
 // repo) whose `HEAD` names the checked-out branch and whose `gitdir` file
 // points at the worktree's `.git` file. Reading those files needs no git
 // process.
-package main
 
 import (
 	"os"
@@ -14,10 +15,10 @@ import (
 
 const branchRefPrefix = "ref: refs/heads/"
 
-// findWorktreeByBranch returns the directory of the linked worktree of repo
-// that has branch checked out. A branch can be checked out in only one
-// worktree, so the match is unique.
-func findWorktreeByBranch(repo, branch string) (string, bool) {
+// FindByBranch returns the directory of the linked worktree of repo that has
+// branch checked out. A branch can be checked out in only one worktree, so the
+// match is unique.
+func FindByBranch(repo, branch string) (string, bool) {
 	if repo == "" || branch == "" {
 		return "", false
 	}

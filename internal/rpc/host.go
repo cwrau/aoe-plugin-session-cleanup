@@ -1,9 +1,10 @@
+package rpc
+
 // Outbound JSON-RPC calls from worker to host, layered on the same ndjson
-// stdio channel the host uses to send this worker requests. handleInboundLine
+// stdio channel the host uses to send this worker requests. HandleInboundLine
 // is the single entry point for every stdin line: it demuxes replies to our
 // own outbound calls (config.get, sessions.list) from genuine host->worker
 // requests and notifications (handed to the caller-supplied funcs).
-package main
 
 import (
 	"context"
@@ -11,18 +12,21 @@ import (
 	"fmt"
 	"io"
 	"sync"
+
+	"github.com/cwrau/aoe-plugin-session-cleanup/internal/session"
 )
 
-type hostRPC struct {
+// Host is the worker's side of the stdio channel to the aoe host.
+type Host struct {
 	mu      sync.Mutex
 	out     io.Writer
 	nextID  int
-	pending map[int]chan rpcReply
+	pending map[int]chan reply
 }
 
-type rpcReply struct {
+type reply struct {
 	result json.RawMessage
-	err    *rpcErrorBody
+	err    *ErrorBody
 }
 
 // inboundLine covers every shape a stdin line can take: a genuine
@@ -34,16 +38,16 @@ type inboundLine struct {
 	Method string          `json:"method"`
 	Params json.RawMessage `json:"params"`
 	Result json.RawMessage `json:"result"`
-	Error  *rpcErrorBody   `json:"error"`
+	Error  *ErrorBody      `json:"error"`
 }
 
-// newHostRPC's id counter starts in a high range so it never collides with
+// NewHost's id counter starts in a high range so it never collides with
 // the ids the host assigns to its own requests to this worker.
-func newHostRPC(out io.Writer) *hostRPC {
-	return &hostRPC{out: out, nextID: 1_000_000, pending: make(map[int]chan rpcReply)}
+func NewHost(out io.Writer) *Host {
+	return &Host{out: out, nextID: 1_000_000, pending: make(map[int]chan reply)}
 }
 
-func (h *hostRPC) writeMessage(v any) {
+func (h *Host) writeMessage(v any) {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return
@@ -54,18 +58,18 @@ func (h *hostRPC) writeMessage(v any) {
 	_, _ = h.out.Write(data)
 }
 
-func (h *hostRPC) allocID() int {
+func (h *Host) allocID() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.nextID++
 	return h.nextID
 }
 
-// call sends a request and blocks until handleInboundLine delivers the
+// Call sends a request and blocks until HandleInboundLine delivers the
 // matching reply or ctx is done, whichever comes first.
-func (h *hostRPC) call(ctx context.Context, method string, params any) (json.RawMessage, error) {
+func (h *Host) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	id := h.allocID()
-	ch := make(chan rpcReply, 1)
+	ch := make(chan reply, 1)
 	h.mu.Lock()
 	h.pending[id] = ch
 	h.mu.Unlock()
@@ -78,21 +82,21 @@ func (h *hostRPC) call(ctx context.Context, method string, params any) (json.Raw
 	h.writeMessage(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params})
 
 	select {
-	case reply := <-ch:
-		if reply.err != nil {
-			return nil, fmt.Errorf("%s: %s (code %d)", method, reply.err.Message, reply.err.Code)
+	case r := <-ch:
+		if r.err != nil {
+			return nil, fmt.Errorf("%s: %s (code %d)", method, r.err.Message, r.err.Code)
 		}
-		return reply.result, nil
+		return r.result, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
 }
 
-// handleInboundLine processes one stdin line. dispatch answers a genuine
+// HandleInboundLine processes one stdin line. dispatch answers a genuine
 // host->worker request; notify receives host notifications and must not block
 // or call the host synchronously, since this runs on the stdin reader that
 // also delivers the replies to those calls.
-func (h *hostRPC) handleInboundLine(
+func (h *Host) HandleInboundLine(
 	line []byte,
 	dispatch func(method string, params json.RawMessage) (any, error),
 	notify func(method string, params json.RawMessage),
@@ -109,9 +113,9 @@ func (h *hostRPC) handleInboundLine(
 		}
 		result, err := dispatch(in.Method, in.Params)
 		if err != nil {
-			h.writeMessage(errorResponse(in.ID, err))
+			h.writeMessage(ErrorResponse(in.ID, err))
 		} else {
-			h.writeMessage(resultResponse(in.ID, result))
+			h.writeMessage(ResultResponse(in.ID, result))
 		}
 		return
 	}
@@ -129,20 +133,20 @@ func (h *hostRPC) handleInboundLine(
 	if !ok {
 		return // stray reply: not one of ours, or already timed out
 	}
-	ch <- rpcReply{result: in.Result, err: in.Error}
+	ch <- reply{result: in.Result, err: in.Error}
 }
 
-// getSetting reads one of this plugin's own settings via config.get. A
+// GetSetting reads one of this plugin's own settings via config.get. A
 // non-empty projectPath resolves a per-project setting for that registered
 // project (project, then global, then default); a host without per-project
 // settings ignores it and returns the global value. An unset setting comes back
 // as a null value.
-func (h *hostRPC) getSetting(ctx context.Context, key, projectPath string) (json.RawMessage, error) {
+func (h *Host) GetSetting(ctx context.Context, key, projectPath string) (json.RawMessage, error) {
 	params := map[string]any{"key": key}
 	if projectPath != "" {
 		params["project_path"] = projectPath
 	}
-	result, err := h.call(ctx, "config.get", params)
+	result, err := h.Call(ctx, "config.get", params)
 	if err != nil {
 		return nil, err
 	}
@@ -155,14 +159,14 @@ func (h *hostRPC) getSetting(ctx context.Context, key, projectPath string) (json
 	return parsed.Value, nil
 }
 
-// listSessions returns every stored session of the host's profile.
-func (h *hostRPC) listSessions(ctx context.Context) ([]session, error) {
-	result, err := h.call(ctx, "sessions.list", map[string]any{})
+// ListSessions returns every stored session of the host's profile.
+func (h *Host) ListSessions(ctx context.Context) ([]session.Session, error) {
+	result, err := h.Call(ctx, "sessions.list", map[string]any{})
 	if err != nil {
 		return nil, err
 	}
 	var parsed struct {
-		Sessions []session `json:"sessions"`
+		Sessions []session.Session `json:"sessions"`
 	}
 	if err := json.Unmarshal(result, &parsed); err != nil {
 		return nil, fmt.Errorf("decode sessions.list: %w", err)

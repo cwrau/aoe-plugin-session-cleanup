@@ -11,6 +11,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/cwrau/aoe-plugin-session-cleanup/internal/rpc"
+	"github.com/cwrau/aoe-plugin-session-cleanup/internal/testutil"
 )
 
 var workerBinary string
@@ -168,7 +171,7 @@ func TestUnknownMethodReturns32601(t *testing.T) {
 	h := startWorker(t, map[string]any{"sessions.list": map[string]any{"sessions": []any{}}})
 	resp := h.request(2, "session-cleanup.nope")
 	errBody, _ := resp["error"].(map[string]any)
-	if errBody["code"] != float64(errMethodNotFound) {
+	if errBody["code"] != float64(rpc.CodeMethodNotFound) {
 		t.Errorf("error = %v", resp)
 	}
 	h.close()
@@ -178,8 +181,8 @@ func TestUnknownMethodReturns32601(t *testing.T) {
 // does: sessions.list seeds it, a lifecycle notification for the deletion
 // arrives, and the matching rule removes the build directory.
 func TestDeleteEventCleansWorktreeEndToEnd(t *testing.T) {
-	wt := newWorktree(t)
-	writeFile(t, filepath.Join(wt, "target/x"), "x")
+	wt := testutil.NewWorktree(t)
+	testutil.WriteFile(t, filepath.Join(wt, "target/x"), "x")
 
 	sess := map[string]any{
 		"id": "sid", "title": "t", "project_path": wt, "trashed": false,
@@ -207,14 +210,14 @@ func TestDeleteEventCleansWorktreeEndToEnd(t *testing.T) {
 	// The cleanup runs asynchronously, and closing stdin cancels in-flight work,
 	// so wait for its effect first.
 	deadline := time.After(10 * time.Second)
-	for exists(filepath.Join(wt, "target")) {
+	for testutil.Exists(filepath.Join(wt, "target")) {
 		select {
 		case <-deadline:
 			t.Fatal("worker did not clean the deleted session's worktree")
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
-	if !exists(filepath.Join(wt, ".git")) {
+	if !testutil.Exists(filepath.Join(wt, ".git")) {
 		t.Error("worker deleted .git")
 	}
 	for _, key := range []string{"config.get:paths", "config.get:on"} {

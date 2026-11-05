@@ -74,5 +74,5 @@ kind = "command"
 command = [".aoe-build/session-cleanup-worker"]
 
 [[runtime.build]]
-command = ["go", "build", "-o", ".aoe-build/session-cleanup-worker", "."]
+command = ["go", "build", "-o", ".aoe-build/session-cleanup-worker", "./cmd/session-cleanup-worker"]
 platforms = ["linux", "macos"]
