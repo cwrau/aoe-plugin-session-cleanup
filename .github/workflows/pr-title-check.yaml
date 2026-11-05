@@ -1,7 +1,7 @@
 name: PR Title Check
 
 # Enforce Conventional Commits on the PR title. Squash-merge makes the title the
-# commit subject git-cliff consumes for CHANGELOG.md. Mirrors the AoE core check.
+# commit subject release-please consumes for CHANGELOG.md. Mirrors the AoE core check.
 
 on:
   pull_request_target:
@@ -23,7 +23,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # Keep in sync with cliff.toml commit_parsers.
+          # Keep in sync with changelog-sections in .github/release-please/config.json.
           types: |
             feat
             fix
