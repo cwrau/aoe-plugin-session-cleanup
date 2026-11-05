@@ -61,7 +61,7 @@ func removePattern(dir, pattern string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("open worktree: %w", err)
 	}
-	defer root.Close()
+	defer func() { _ = root.Close() }() // a directory handle opened for deletes only; nothing to flush
 	matches, err := filepath.Glob(filepath.Join(dir, filepath.Clean(pattern)))
 	if err != nil {
 		return 0, fmt.Errorf("bad pattern: %w", err)
