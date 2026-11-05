@@ -5,7 +5,7 @@
   ],
   "packageRules": [
     {
-      "description": "Merge non-major updates automatically once approved and green; majors stay manual.",
+      "description": "Merge non-major updates automatically once approved (main requires one approving review; CI is not a required check); majors stay manual.",
       "matchUpdateTypes": [
         "minor",
         "patch",
